@@ -28,6 +28,47 @@ const POSITION_GROUPS = {
   LS: "ATT",
   RS: "ATT"
 };
+const ROLE_GROUPS = ["GK", "DEF", "MID", "ATT"];
+const ROLE_WEIGHT_MAP = {
+  GK: {
+    overall: 0.16,
+    gk: 0.58,
+    reactions: 0.12,
+    composure: 0.08,
+    physic: 0.06
+  },
+  DEF: {
+    overall: 0.23,
+    defending: 0.3,
+    physic: 0.18,
+    pace: 0.12,
+    passing: 0.05,
+    dribbling: 0.03,
+    reactions: 0.05,
+    composure: 0.04
+  },
+  MID: {
+    overall: 0.22,
+    passing: 0.24,
+    dribbling: 0.17,
+    pace: 0.11,
+    shooting: 0.08,
+    defending: 0.08,
+    physic: 0.05,
+    reactions: 0.03,
+    composure: 0.02
+  },
+  ATT: {
+    overall: 0.22,
+    shooting: 0.26,
+    pace: 0.18,
+    dribbling: 0.17,
+    passing: 0.11,
+    physic: 0.03,
+    reactions: 0.02,
+    composure: 0.01
+  }
+};
 
 function toNumber(value) {
   const parsedValue = Number(value);
@@ -100,6 +141,10 @@ function getPositionGroup(position) {
 
 function getPlayerPositionGroups(player) {
   return [...new Set(getPlayerPositions(player).map((position) => getPositionGroup(position)).filter(Boolean))];
+}
+
+function getNaturalRoleGroup(player) {
+  return getPositionGroup(getPrimaryPosition(player)) || "MID";
 }
 
 function deriveAgeFromBirthDate(birthDate) {
@@ -249,28 +294,48 @@ function getGoalkeepingScore(player) {
   );
 }
 
-function getRoleStrength(player, roleGroup) {
-  const overall = getPlayerOverall(player);
-  const reactions = pickFirstNumber(player, ["reactions"]) || 0;
-  const composure = pickFirstNumber(player, ["composure"]) || 0;
+function getPlayerImageUrl(player) {
+  return (
+    pickFirstText(player, [
+      "image_url",
+      "imageUrl",
+      "photo_url",
+      "photoUrl",
+      "player_face_url",
+      "playerFaceUrl",
+      "headshot_url",
+      "headshotUrl",
+      "avatar_url",
+      "avatarUrl"
+    ]) || null
+  );
+}
 
-  if (roleGroup === "GK") {
-    return average([overall, getGoalkeepingScore(player), reactions, composure]) || overall;
-  }
+function buildRoleStatMap(player) {
+  return {
+    overall: getPlayerOverall(player),
+    pace: getPlayerPace(player),
+    shooting: getPlayerShooting(player),
+    passing: getPlayerPassing(player),
+    dribbling: getPlayerDribbling(player),
+    defending: getPlayerDefending(player),
+    physic: getPlayerPhysic(player),
+    gk: getGoalkeepingScore(player),
+    reactions: pickFirstNumber(player, ["reactions"]) || 0,
+    composure: pickFirstNumber(player, ["composure"]) || 0
+  };
+}
 
-  if (roleGroup === "DEF") {
-    return average([overall, getPlayerDefending(player), getPlayerPhysic(player), getPlayerPace(player), reactions]) || overall;
-  }
+function computeRoleWeightedScore(player, roleGroup) {
+  const weights = ROLE_WEIGHT_MAP[roleGroup] || ROLE_WEIGHT_MAP.MID;
+  const stats = buildRoleStatMap(player);
+  let total = 0;
 
-  if (roleGroup === "MID") {
-    return average([overall, getPlayerPassing(player), getPlayerDribbling(player), getPlayerPhysic(player), reactions, composure]) || overall;
-  }
+  Object.entries(weights).forEach(([key, weight]) => {
+    total += (stats[key] || 0) * weight;
+  });
 
-  if (roleGroup === "ATT") {
-    return average([overall, getPlayerShooting(player), getPlayerPace(player), getPlayerDribbling(player), getPlayerPassing(player), reactions]) || overall;
-  }
-
-  return overall;
+  return Math.round(total);
 }
 
 function getPositionFitBonus(player, roleGroup) {
@@ -305,19 +370,66 @@ function getPositionFitBonus(player, roleGroup) {
   return 0;
 }
 
+function calculateEffectiveOverall(player, roleGroup = getNaturalRoleGroup(player)) {
+  const rawOverall = getPlayerOverall(player);
+  const weightedScore = computeRoleWeightedScore(player, roleGroup);
+  const naturalRole = getNaturalRoleGroup(player);
+  const fitBonus = getPositionFitBonus(player, roleGroup);
+  const naturalRoleBonus = roleGroup === naturalRole ? 2 : 0;
+  const adjustedScore = Math.round((weightedScore + rawOverall) / 2 + fitBonus * 0.18 + naturalRoleBonus);
+
+  return Math.max(1, adjustedScore);
+}
+
+function getRoleScoreBreakdown(player) {
+  return ROLE_GROUPS.reduce((scores, roleGroup) => {
+    scores[roleGroup] = calculateEffectiveOverall(player, roleGroup);
+    return scores;
+  }, {});
+}
+
+function getBestRoleGroup(player) {
+  const positionGroups = getPlayerPositionGroups(player);
+  const candidateGroups = positionGroups.length ? positionGroups : ROLE_GROUPS;
+
+  return candidateGroups.reduce(
+    (bestGroup, roleGroup) => {
+      const score = calculateEffectiveOverall(player, roleGroup);
+
+      if (score > bestGroup.score) {
+        return {
+          roleGroup,
+          score
+        };
+      }
+
+      return bestGroup;
+    },
+    {
+      roleGroup: getNaturalRoleGroup(player),
+      score: calculateEffectiveOverall(player, getNaturalRoleGroup(player))
+    }
+  );
+}
+
+function getRoleStrength(player, roleGroup) {
+  return calculateEffectiveOverall(player, roleGroup);
+}
+
 function calculateGameScore(player) {
-  const overall = getPlayerOverall(player);
+  const rawOverall = getPlayerOverall(player);
+  const bestRole = getBestRoleGroup(player);
   const potential = getPlayerPotential(player);
   const marketValue = getMarketValueEuro(player);
   const marketBonus = marketValue > 0 ? Math.min(14, Math.round(Math.log10(marketValue + 1))) : 0;
 
   return Math.round(
-    overall * 4 +
+    bestRole.score * 4.5 +
+      rawOverall * 1.8 +
       potential * 1.4 +
       getInternationalReputation(player) * 6 +
       getSkillMoves(player) * 2 +
       getWeakFoot(player) +
-      getRoleStrength(player, getPositionGroup(getPrimaryPosition(player)) || "MID") +
       marketBonus
   );
 }
@@ -329,6 +441,10 @@ function buildPlayerProfile(player) {
 
   const positions = getPlayerPositions(player);
   const primaryPosition = positions[0] || null;
+  const naturalRole = getNaturalRoleGroup(player);
+  const bestRole = getBestRoleGroup(player);
+  const rawOverall = getPlayerOverall(player);
+  const effectiveOverall = calculateEffectiveOverall(player, naturalRole);
 
   return {
     id: player._id || null,
@@ -339,10 +455,16 @@ function buildPlayerProfile(player) {
     nationality: getPlayerNationality(player) || null,
     clubName: getPlayerClubName(player) || null,
     leagueName: getPlayerLeagueName(player) || null,
+    imageUrl: getPlayerImageUrl(player),
     positions,
     primaryPosition,
     positionGroup: getPositionGroup(primaryPosition),
-    overall: getPlayerOverall(player),
+    overall: effectiveOverall,
+    rawOverall,
+    effectiveOverall,
+    naturalRole,
+    bestRole: bestRole.roleGroup,
+    roleScores: getRoleScoreBreakdown(player),
     potential: getPlayerPotential(player),
     preferredFoot: pickFirstText(player, ["preferred_foot"]) || null,
     weakFoot: getWeakFoot(player) || null,
@@ -407,14 +529,18 @@ function buildPlayerProfile(player) {
 
 module.exports = {
   buildPlayerProfile,
+  calculateEffectiveOverall,
   calculateGameScore,
+  getBestRoleGroup,
   getGoalkeepingScore,
   getInternationalReputation,
   getMarketValueEuro,
+  getNaturalRoleGroup,
   getPlayerAge,
   getPlayerClubName,
   getPlayerDefending,
   getPlayerDribbling,
+  getPlayerImageUrl,
   getPlayerLeagueName,
   getPlayerName,
   getPlayerNationality,
@@ -429,6 +555,7 @@ module.exports = {
   getPositionFitBonus,
   getPositionGroup,
   getPrimaryPosition,
+  getRoleScoreBreakdown,
   getRoleStrength,
   getSkillMoves,
   getWeakFoot

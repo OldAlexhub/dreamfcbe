@@ -1,6 +1,7 @@
 const OwnedCard = require("../models/OwnedCard");
 const Pack = require("../models/Pack");
 const {
+  calculateEffectiveOverall,
   getInternationalReputation,
   getMarketValueEuro,
   getPlayerOverall,
@@ -12,10 +13,10 @@ const {
 const COOLDOWN_HOURS = 24;
 const RARITY_MULTIPLIERS = {
   common: 1,
-  rare: 1.2,
-  epic: 1.55,
-  legendary: 2.1,
-  icon: 3
+  rare: 1.6,
+  epic: 2.7,
+  legendary: 4.2,
+  icon: 6.5
 };
 
 function createError(message, statusCode, details) {
@@ -39,19 +40,19 @@ function getRefillCoins() {
 }
 
 function getRarityFromOverall(overall) {
-  if (overall >= 92) {
+  if (overall >= 93) {
     return "icon";
   }
 
-  if (overall >= 87) {
+  if (overall >= 89) {
     return "legendary";
   }
 
-  if (overall >= 80) {
+  if (overall >= 83) {
     return "epic";
   }
 
-  if (overall >= 70) {
+  if (overall >= 75) {
     return "rare";
   }
 
@@ -60,6 +61,7 @@ function getRarityFromOverall(overall) {
 
 function calculateSellValue(player, rarity) {
   const overall = getPlayerOverall(player);
+  const effectiveOverall = calculateEffectiveOverall(player);
   const resolvedRarity = rarity || getRarityFromOverall(overall);
   const multiplier = RARITY_MULTIPLIERS[resolvedRarity] || 1;
   const potential = getPlayerPotential(player);
@@ -67,15 +69,16 @@ function calculateSellValue(player, rarity) {
   const skillMoves = getSkillMoves(player);
   const weakFoot = getWeakFoot(player);
   const marketValue = getMarketValueEuro(player);
-  const marketBonus = marketValue > 0 ? Math.min(18, Math.round(Math.log10(marketValue + 1))) : 0;
+  const marketBonus = marketValue > 0 ? Math.min(26, Math.round(Math.log10(marketValue + 1) * 2.2)) : 0;
   const baseValue = Math.max(
     12,
     Math.round(
-      overall * 0.4 +
-        potential * 0.08 +
-        internationalReputation * 3 +
-        skillMoves +
-        weakFoot * 0.5 +
+      (effectiveOverall - 35) * 1.4 +
+        (overall - 40) * 0.45 +
+        potential * 0.14 +
+        internationalReputation * 8 +
+        skillMoves * 3 +
+        weakFoot * 2 +
         marketBonus
     )
   );

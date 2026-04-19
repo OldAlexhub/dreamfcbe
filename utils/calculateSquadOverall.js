@@ -1,4 +1,4 @@
-const { getPlayerOverall } = require("./playerData");
+const { calculateEffectiveOverall } = require("./playerData");
 
 function getOverallFromCard(card) {
   if (!card) {
@@ -6,7 +6,7 @@ function getOverallFromCard(card) {
   }
 
   const player = card.playerId || card.player || null;
-  return player ? getPlayerOverall(player) : 0;
+  return player ? calculateEffectiveOverall(player) : 0;
 }
 
 function calculateSquadOverall(cards) {

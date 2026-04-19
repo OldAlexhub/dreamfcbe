@@ -11,6 +11,7 @@ const {
 } = require("../utils/playerData");
 
 const FORMATION_PATTERN = /^\d-\d-\d(?:-\d)?$/;
+const FORMATION_OPTIONS = ["4-3-3", "4-4-2", "4-2-3-1", "3-5-2", "3-4-3"];
 
 function createError(message, statusCode, details) {
   const error = new Error(message);
@@ -32,7 +33,7 @@ function validateFormation(formation) {
     return;
   }
 
-  if (typeof formation !== "string" || !FORMATION_PATTERN.test(formation.trim())) {
+  if (typeof formation !== "string" || !FORMATION_PATTERN.test(formation.trim()) || !FORMATION_OPTIONS.includes(formation.trim())) {
     throw createError("Formation must look like 4-3-3 or 4-2-3-1.", 400);
   }
 }
@@ -205,7 +206,9 @@ async function autoBuildSquad(userId) {
 }
 
 module.exports = {
+  FORMATION_OPTIONS,
   autoBuildSquad,
+  getFormationRoleSlots,
   getSquad,
   updateSquad
 };

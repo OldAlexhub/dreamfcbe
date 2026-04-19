@@ -16,6 +16,12 @@ const userSchema = new mongoose.Schema(
       minlength: 3,
       maxlength: 20
     },
+    teamName: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 32
+    },
     password: {
       type: String,
       required: true,

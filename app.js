@@ -5,6 +5,7 @@ const express = require("express");
 
 const authRoutes = require("./routes/authRoutes");
 const clubRoutes = require("./routes/clubRoutes");
+const matchRoutes = require("./routes/matchRoutes");
 const packRoutes = require("./routes/packRoutes");
 const squadRoutes = require("./routes/squadRoutes");
 const { errorHandler, notFound } = require("./middleware/errorMiddleware");
@@ -25,6 +26,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/packs", packRoutes);
 app.use("/api/club", clubRoutes);
 app.use("/api/squad", squadRoutes);
+app.use("/api/matches", matchRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

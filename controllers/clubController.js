@@ -1,4 +1,5 @@
 const OwnedCard = require("../models/OwnedCard");
+const { buildDefaultTeamName, validateTeamName } = require("./authController");
 const { applyCooldownIfNeeded, calculateSellValue, claimRefill, sellOwnedCards } = require("../services/economyService");
 const buildCollectionInsights = require("../utils/buildCollectionInsights");
 const serializeOwnedCard = require("../utils/serializeOwnedCard");
@@ -7,7 +8,9 @@ function buildClubSummary(user) {
   return {
     id: user._id,
     username: user.username,
+    teamName: user.teamName || buildDefaultTeamName(user.username),
     coins: user.coins,
+    coinCooldownUntil: user.coinCooldownUntil,
     packsOpened: user.packsOpened,
     wins: user.wins,
     losses: user.losses
@@ -36,6 +39,25 @@ async function getClub(req, res, next) {
       user: buildClubSummary(req.user),
       cooldownStatus,
       collectionSummary: buildCollectionInsights(ownedCards)
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function updateClubProfile(req, res, next) {
+  try {
+    const teamName = typeof req.body.teamName === "string" ? req.body.teamName.trim() : "";
+
+    validateTeamName(teamName);
+
+    req.user.teamName = teamName;
+    await req.user.save();
+
+    res.json({
+      success: true,
+      message: "Club profile updated successfully.",
+      user: buildClubSummary(req.user)
     });
   } catch (error) {
     next(error);
@@ -108,5 +130,6 @@ module.exports = {
   claimCoinRefill,
   getClub,
   getCollection,
-  sellCards
+  sellCards,
+  updateClubProfile
 };

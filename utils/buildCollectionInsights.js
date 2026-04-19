@@ -1,4 +1,5 @@
 const {
+  calculateEffectiveOverall,
   getPlayerAge,
   getPlayerClubName,
   getPlayerLeagueName,
@@ -86,7 +87,8 @@ function buildCollectionInsights(cards) {
   const safeCards = Array.isArray(cards) ? cards : [];
   const players = safeCards.map((card) => card.playerId || card.player).filter(Boolean);
 
-  const overallValues = players.map((player) => getPlayerOverall(player));
+  const overallValues = players.map((player) => calculateEffectiveOverall(player));
+  const baseOverallValues = players.map((player) => getPlayerOverall(player));
   const potentialValues = players.map((player) => getPlayerPotential(player));
   const ageValues = players.map((player) => getPlayerAge(player)).filter((value) => value !== null);
 
@@ -102,6 +104,7 @@ function buildCollectionInsights(cards) {
     squadCount: safeCards.filter((card) => card.isInSquad).length,
     favoriteCount: safeCards.filter((card) => card.isFavorite).length,
     averageOverall: average(overallValues),
+    averageBaseOverall: average(baseOverallValues),
     averagePotential: average(potentialValues),
     averageAge: average(ageValues),
     rarityBreakdown,

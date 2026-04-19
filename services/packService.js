@@ -2,18 +2,23 @@ const OwnedCard = require("../models/OwnedCard");
 const Pack = require("../models/Pack");
 const Player = require("../models/Player");
 const { applyCooldownIfNeeded } = require("./economyService");
-const { getPlayerOverall } = require("../utils/playerData");
+const {
+  calculateEffectiveOverall,
+  calculateGameScore,
+  getInternationalReputation,
+  getMarketValueEuro,
+  getPlayerOverall
+} = require("../utils/playerData");
 const weightedRandom = require("../utils/weightedRandom");
 
 const RARITY_BANDS = {
-  common: { min: 0, max: 69 },
-  rare: { min: 70, max: 79 },
-  epic: { min: 80, max: 86 },
-  legendary: { min: 87, max: 91 },
-  icon: { min: 92, max: 99 }
+  common: { min: 0, max: 74 },
+  rare: { min: 75, max: 82 },
+  epic: { min: 83, max: 88 },
+  legendary: { min: 89, max: 92 },
+  icon: { min: 93, max: 99 }
 };
 
-// Seed-ready pack data. The service upserts these on startup.
 const DEFAULT_PACK_SEEDS = [
   {
     name: "Basic Pack",
@@ -25,7 +30,7 @@ const DEFAULT_PACK_SEEDS = [
       rare: 22,
       epic: 5,
       legendary: 1,
-      icon: 0.1
+      icon: 0.08
     },
     active: true
   },
@@ -39,7 +44,7 @@ const DEFAULT_PACK_SEEDS = [
       rare: 35,
       epic: 15,
       legendary: 4,
-      icon: 1
+      icon: 0.8
     },
     active: true
   },
@@ -129,22 +134,22 @@ function buildNumericFieldExpression(fieldNames) {
   };
 }
 
-function buildPullScoreExpression() {
-  return {
-    $add: [
-      {
-        $multiply: [{ $ifNull: ["$numericOverall", 0] }, 100]
-      },
-      {
-        $multiply: [{ $ifNull: ["$internationalReputationValue", 0] }, 12]
-      },
-      {
-        $ln: {
-          $add: [{ $ifNull: ["$marketValueEuro", 0] }, 1]
-        }
-      }
-    ]
-  };
+function getCandidatePullScore(player, rarity) {
+  const overall = getPlayerOverall(player);
+  const effectiveOverall = calculateEffectiveOverall(player);
+  const marketValue = getMarketValueEuro(player);
+  const marketBonus = marketValue > 0 ? Math.min(24, Math.round(Math.log10(marketValue + 1) * 2)) : 0;
+  const reputationBonus = getInternationalReputation(player) * 10;
+  const rarityBonus =
+    {
+      common: 0,
+      rare: 6,
+      epic: 12,
+      legendary: 20,
+      icon: 28
+    }[rarity] || 0;
+
+  return effectiveOverall * 8 + overall * 5 + marketBonus + reputationBonus + rarityBonus + calculateGameScore(player);
 }
 
 async function findRandomPlayerByBand(rarity, excludedPlayerIds = []) {
@@ -153,20 +158,10 @@ async function findRandomPlayerByBand(rarity, excludedPlayerIds = []) {
   for (const currentRarity of fallbackOrder) {
     const band = RARITY_BANDS[currentRarity];
 
-    const [player] = await Player.aggregate([
+    const candidates = await Player.aggregate([
       {
         $addFields: {
-          numericOverall: buildNumericFieldExpression(["overall", "overall_rating"]),
-          internationalReputationValue: buildNumericFieldExpression([
-            "international_reputation",
-            "international_reputation_1_5"
-          ]),
-          marketValueEuro: buildNumericFieldExpression(["value_eur", "value_euro"])
-        }
-      },
-      {
-        $addFields: {
-          pullScore: buildPullScoreExpression()
+          numericOverall: buildNumericFieldExpression(["overall", "overall_rating"])
         }
       },
       {
@@ -180,10 +175,14 @@ async function findRandomPlayerByBand(rarity, excludedPlayerIds = []) {
           }
         }
       },
-      { $sample: { size: 25 } },
-      { $sort: { pullScore: -1 } },
-      { $limit: 1 }
+      { $sample: { size: 40 } }
     ]);
+
+    const player = candidates
+      .sort((leftPlayer, rightPlayer) => {
+        return getCandidatePullScore(rightPlayer, currentRarity) - getCandidatePullScore(leftPlayer, currentRarity);
+      })
+      .slice(0, 1)[0];
 
     if (player) {
       return {
@@ -193,20 +192,10 @@ async function findRandomPlayerByBand(rarity, excludedPlayerIds = []) {
     }
   }
 
-  const [fallbackPlayer] = await Player.aggregate([
+  const fallbackCandidates = await Player.aggregate([
     {
       $addFields: {
-        numericOverall: buildNumericFieldExpression(["overall", "overall_rating"]),
-        internationalReputationValue: buildNumericFieldExpression([
-          "international_reputation",
-          "international_reputation_1_5"
-        ]),
-        marketValueEuro: buildNumericFieldExpression(["value_eur", "value_euro"])
-      }
-    },
-    {
-      $addFields: {
-        pullScore: buildPullScoreExpression()
+        numericOverall: buildNumericFieldExpression(["overall", "overall_rating"])
       }
     },
     {
@@ -219,10 +208,11 @@ async function findRandomPlayerByBand(rarity, excludedPlayerIds = []) {
         }
       }
     },
-    { $sample: { size: 25 } },
-    { $sort: { pullScore: -1 } },
-    { $limit: 1 }
+    { $sample: { size: 40 } }
   ]);
+  const fallbackPlayer = fallbackCandidates
+    .sort((leftPlayer, rightPlayer) => getCandidatePullScore(rightPlayer, rarity) - getCandidatePullScore(leftPlayer, rarity))
+    .slice(0, 1)[0];
 
   if (!fallbackPlayer) {
     return null;
