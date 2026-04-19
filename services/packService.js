@@ -7,7 +7,8 @@ const {
   calculateGameScore,
   getInternationalReputation,
   getMarketValueEuro,
-  getPlayerOverall
+  getPlayerOverall,
+  isIconPlayer,
 } = require("../utils/playerData");
 const weightedRandom = require("../utils/weightedRandom");
 
@@ -15,67 +16,67 @@ const RARITY_BANDS = {
   common: { min: 0, max: 74 },
   rare: { min: 75, max: 82 },
   epic: { min: 83, max: 88 },
-  legendary: { min: 89, max: 92 },
-  icon: { min: 93, max: 99 }
+  legendary: { min: 89, max: 95 },
+  icon: { min: 96, max: 99 },
 };
 
 const DEFAULT_PACK_SEEDS = [
   {
     name: "Basic Pack",
-    cost: 200,
+    cost: 500,
     minPlayers: 3,
     maxPlayers: 4,
     odds: {
-      common: 72,
-      rare: 22,
-      epic: 5,
-      legendary: 1,
-      icon: 0.08
+      common: 74,
+      rare: 21,
+      epic: 4.65,
+      legendary: 0.34,
+      icon: 0.01,
     },
-    active: true
+    active: true,
   },
   {
     name: "Silver Pack",
-    cost: 450,
+    cost: 1000,
     minPlayers: 4,
     maxPlayers: 5,
     odds: {
-      common: 45,
-      rare: 35,
-      epic: 15,
-      legendary: 4,
-      icon: 0.8
+      common: 50,
+      rare: 33.5,
+      epic: 13,
+      legendary: 3.45,
+      icon: 0.05,
     },
-    active: true
+    active: true,
   },
   {
     name: "Gold Pack",
-    cost: 800,
+    cost: 2500,
     minPlayers: 5,
     maxPlayers: 6,
     odds: {
-      common: 20,
-      rare: 40,
+      common: 24,
+      rare: 39,
       epic: 28,
-      legendary: 10,
-      icon: 2
+      legendary: 8.75,
+      icon: 0.25,
     },
-    active: true
+    active: true,
   },
   {
     name: "Elite Pack",
-    cost: 1400,
+    cost: 4000,
     minPlayers: 5,
     maxPlayers: 7,
     odds: {
-      common: 5,
-      rare: 25,
-      epic: 40,
-      legendary: 23,
-      icon: 7
+      common: 8,
+      rare: 29,
+      epic: 41,
+      legendary: 21.1,
+      icon: 0.9,
     },
-    active: true
-  }
+    active: true,
+  },
 ];
 
 function createError(message, statusCode, details) {
@@ -93,13 +94,25 @@ function randomIntegerBetween(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+function getConfiguredNumber(value, fallbackValue) {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : fallbackValue;
+}
+
+function getIconPoolLimit() {
+  return Math.max(
+    1,
+    Math.floor(getConfiguredNumber(process.env.PACK_ICON_POOL_LIMIT, 12)),
+  );
+}
+
 function getFallbackRarityOrder(targetRarity) {
   const orders = {
-    common: ["common", "rare", "epic", "legendary", "icon"],
-    rare: ["rare", "common", "epic", "legendary", "icon"],
-    epic: ["epic", "rare", "legendary", "common", "icon"],
-    legendary: ["legendary", "icon", "epic", "rare", "common"],
-    icon: ["icon", "legendary", "epic", "rare", "common"]
+    common: ["common", "rare", "epic", "legendary"],
+    rare: ["rare", "common", "epic", "legendary"],
+    epic: ["epic", "rare", "legendary", "common"],
+    legendary: ["legendary", "epic", "rare", "common"],
+    icon: ["icon", "legendary", "epic", "rare", "common"],
   };
 
   return orders[targetRarity] || orders.common;
@@ -112,8 +125,8 @@ function buildNumericFieldExpression(fieldNames) {
         input: `$${fieldNames[0]}`,
         to: "double",
         onError: null,
-        onNull: null
-      }
+        onNull: null,
+      },
     };
   }
 
@@ -126,11 +139,11 @@ function buildNumericFieldExpression(fieldNames) {
           input: `$${firstFieldName}`,
           to: "double",
           onError: null,
-          onNull: null
-        }
+          onNull: null,
+        },
       },
-      buildNumericFieldExpression(remainingFieldNames)
-    ]
+      buildNumericFieldExpression(remainingFieldNames),
+    ],
   };
 }
 
@@ -138,56 +151,167 @@ function getCandidatePullScore(player, rarity) {
   const overall = getPlayerOverall(player);
   const effectiveOverall = calculateEffectiveOverall(player);
   const marketValue = getMarketValueEuro(player);
-  const marketBonus = marketValue > 0 ? Math.min(24, Math.round(Math.log10(marketValue + 1) * 2)) : 0;
+  const marketBonus =
+    marketValue > 0
+      ? Math.min(24, Math.round(Math.log10(marketValue + 1) * 2))
+      : 0;
   const reputationBonus = getInternationalReputation(player) * 10;
+  const explicitIconBonus = isIconPlayer(player) ? 180 : 0;
   const rarityBonus =
     {
       common: 0,
       rare: 6,
       epic: 12,
       legendary: 20,
-      icon: 28
+      icon: 28,
     }[rarity] || 0;
 
-  return effectiveOverall * 8 + overall * 5 + marketBonus + reputationBonus + rarityBonus + calculateGameScore(player);
+  return (
+    effectiveOverall * 8 +
+    overall * 5 +
+    marketBonus +
+    reputationBonus +
+    rarityBonus +
+    explicitIconBonus +
+    calculateGameScore(player)
+  );
+}
+
+function pickWeightedCandidate(candidates, rarity) {
+  const weightedCandidates = candidates
+    .map((player) => ({
+      player,
+      weight: Math.max(1, getCandidatePullScore(player, rarity)),
+    }))
+    .filter((candidate) => candidate.weight > 0);
+
+  if (!weightedCandidates.length) {
+    return null;
+  }
+
+  const totalWeight = weightedCandidates.reduce(
+    (sum, candidate) => sum + candidate.weight,
+    0,
+  );
+  let roll = Math.random() * totalWeight;
+
+  for (const candidate of weightedCandidates) {
+    roll -= candidate.weight;
+
+    if (roll <= 0) {
+      return candidate.player;
+    }
+  }
+
+  return weightedCandidates[weightedCandidates.length - 1].player;
+}
+
+async function findRandomIconPlayer(excludedPlayerIds = []) {
+  const iconCandidates = await Player.aggregate([
+    {
+      $addFields: {
+        numericOverall: buildNumericFieldExpression([
+          "overall",
+          "overall_rating",
+        ]),
+      },
+    },
+    {
+      $match: {
+        _id: {
+          $nin: excludedPlayerIds,
+        },
+        $or: [
+          { isIcon: true },
+          { is_icon: true },
+          { isDreamIcon: true },
+          { rarity: /icon/i },
+          { rarity_tier: /icon/i },
+          { cardDesign: /icon/i },
+          { card_design: /icon/i },
+          { specialEdition: /icon/i },
+          { special_edition: /icon/i },
+          { cardSeries: /icon/i },
+          { card_series: /icon/i },
+        ],
+      },
+    },
+    { $sort: { numericOverall: -1, name: 1, full_name: 1, long_name: 1 } },
+    { $limit: Math.max(24, getIconPoolLimit()) },
+  ]);
+  const prioritizedCandidates = iconCandidates
+    .filter((player) => isIconPlayer(player))
+    .sort(
+      (leftPlayer, rightPlayer) =>
+        getCandidatePullScore(rightPlayer, "icon") -
+        getCandidatePullScore(leftPlayer, "icon"),
+    )
+    .slice(0, getIconPoolLimit());
+  const player = pickWeightedCandidate(prioritizedCandidates, "icon");
+
+  if (!player) {
+    return null;
+  }
+
+  return {
+    player,
+    rarity: "icon",
+  };
 }
 
 async function findRandomPlayerByBand(rarity, excludedPlayerIds = []) {
   const fallbackOrder = getFallbackRarityOrder(rarity);
 
   for (const currentRarity of fallbackOrder) {
+    if (currentRarity === "icon") {
+      const iconPlayer = await findRandomIconPlayer(excludedPlayerIds);
+
+      if (iconPlayer) {
+        return iconPlayer;
+      }
+
+      continue;
+    }
+
     const band = RARITY_BANDS[currentRarity];
 
     const candidates = await Player.aggregate([
       {
         $addFields: {
-          numericOverall: buildNumericFieldExpression(["overall", "overall_rating"])
-        }
+          numericOverall: buildNumericFieldExpression([
+            "overall",
+            "overall_rating",
+          ]),
+        },
       },
       {
         $match: {
           _id: {
-            $nin: excludedPlayerIds
+            $nin: excludedPlayerIds,
           },
           numericOverall: {
             $gte: band.min,
-            $lte: band.max
-          }
-        }
+            $lte: band.max,
+          },
+        },
       },
-      { $sample: { size: 40 } }
+      { $sample: { size: 40 } },
     ]);
 
     const player = candidates
+      .filter((candidate) => !isIconPlayer(candidate))
       .sort((leftPlayer, rightPlayer) => {
-        return getCandidatePullScore(rightPlayer, currentRarity) - getCandidatePullScore(leftPlayer, currentRarity);
+        return (
+          getCandidatePullScore(rightPlayer, currentRarity) -
+          getCandidatePullScore(leftPlayer, currentRarity)
+        );
       })
       .slice(0, 1)[0];
 
     if (player) {
       return {
         player,
-        rarity: currentRarity
+        rarity: currentRarity,
       };
     }
   }
@@ -195,23 +319,32 @@ async function findRandomPlayerByBand(rarity, excludedPlayerIds = []) {
   const fallbackCandidates = await Player.aggregate([
     {
       $addFields: {
-        numericOverall: buildNumericFieldExpression(["overall", "overall_rating"])
-      }
+        numericOverall: buildNumericFieldExpression([
+          "overall",
+          "overall_rating",
+        ]),
+      },
     },
     {
       $match: {
         _id: {
-          $nin: excludedPlayerIds
+          $nin: excludedPlayerIds,
         },
         numericOverall: {
-          $ne: null
-        }
-      }
+          $ne: null,
+        },
+      },
     },
-    { $sample: { size: 40 } }
+    { $sample: { size: 40 } },
   ]);
+  const fallbackRarity = rarity === "icon" ? "legendary" : rarity;
   const fallbackPlayer = fallbackCandidates
-    .sort((leftPlayer, rightPlayer) => getCandidatePullScore(rightPlayer, rarity) - getCandidatePullScore(leftPlayer, rarity))
+    .filter((candidate) => !isIconPlayer(candidate))
+    .sort(
+      (leftPlayer, rightPlayer) =>
+        getCandidatePullScore(rightPlayer, fallbackRarity) -
+        getCandidatePullScore(leftPlayer, fallbackRarity),
+    )
     .slice(0, 1)[0];
 
   if (!fallbackPlayer) {
@@ -220,7 +353,7 @@ async function findRandomPlayerByBand(rarity, excludedPlayerIds = []) {
 
   return {
     player: fallbackPlayer,
-    rarity
+    rarity: fallbackRarity,
   };
 }
 
@@ -232,9 +365,20 @@ async function seedDefaultPacks() {
   const operations = DEFAULT_PACK_SEEDS.map((pack) => ({
     updateOne: {
       filter: { name: pack.name },
-      update: { $setOnInsert: pack },
-      upsert: true
-    }
+      update: {
+        $set: {
+          cost: pack.cost,
+          minPlayers: pack.minPlayers,
+          maxPlayers: pack.maxPlayers,
+          odds: pack.odds,
+          active: pack.active,
+        },
+        $setOnInsert: {
+          name: pack.name,
+        },
+      },
+      upsert: true,
+    },
   }));
 
   await Pack.bulkWrite(operations);
@@ -254,9 +398,13 @@ async function openPack(user, packId) {
   const playerCount = await Player.estimatedDocumentCount();
 
   if (!playerCount) {
-    throw createError("Players collection is empty. Import FIFA players before opening packs.", 503, {
-      collection: "players"
-    });
+    throw createError(
+      "Players collection is empty. Import FIFA players before opening packs.",
+      503,
+      {
+        collection: "players",
+      },
+    );
   }
 
   if (user.coins < pack.cost) {
@@ -265,7 +413,7 @@ async function openPack(user, packId) {
     throw createError(`Not enough coins to open ${pack.name}.`, 400, {
       currentCoins: user.coins,
       packCost: pack.cost,
-      cooldownStatus
+      cooldownStatus,
     });
   }
 
@@ -275,7 +423,10 @@ async function openPack(user, packId) {
 
   for (let index = 0; index < totalPulls; index += 1) {
     const rolledRarity = weightedRandom(pack.odds);
-    const pulledPlayer = await findRandomPlayerByBand(rolledRarity, excludedPlayerIds);
+    const pulledPlayer = await findRandomPlayerByBand(
+      rolledRarity,
+      excludedPlayerIds,
+    );
 
     if (pulledPlayer) {
       pulls.push(pulledPlayer);
@@ -288,8 +439,8 @@ async function openPack(user, packId) {
       "No eligible players were found. Make sure the players collection has usable overall ratings.",
       503,
       {
-        collection: "players"
-      }
+        collection: "players",
+      },
     );
   }
 
@@ -298,8 +449,8 @@ async function openPack(user, packId) {
       userId: user._id,
       playerId: pull.player._id,
       acquiredFromPack: pack.name,
-      rarity: pull.rarity
-    }))
+      rarity: pull.rarity,
+    })),
   );
 
   user.coins -= pack.cost;
@@ -307,7 +458,7 @@ async function openPack(user, packId) {
   await user.save();
 
   const populatedCards = await OwnedCard.find({
-    _id: { $in: createdCards.map((card) => card._id) }
+    _id: { $in: createdCards.map((card) => card._id) },
   })
     .populate("playerId")
     .sort({ acquiredAt: 1 });
@@ -319,13 +470,15 @@ async function openPack(user, packId) {
     pulledCards: populatedCards,
     cooldownStatus,
     pullSummary: {
-      highestOverall: Math.max(...populatedCards.map((card) => getPlayerOverall(card.playerId))),
+      highestOverall: Math.max(
+        ...populatedCards.map((card) => getPlayerOverall(card.playerId)),
+      ),
       rarityBreakdown: pulls.reduce((summary, pull) => {
         summary[pull.rarity] = (summary[pull.rarity] || 0) + 1;
         return summary;
-      }, {})
+      }, {}),
     },
-    user
+    user,
   };
 }
 
@@ -334,5 +487,5 @@ module.exports = {
   RARITY_BANDS,
   getActivePacks,
   openPack,
-  seedDefaultPacks
+  seedDefaultPacks,
 };

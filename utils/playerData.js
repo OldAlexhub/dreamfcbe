@@ -311,6 +311,94 @@ function getPlayerImageUrl(player) {
   );
 }
 
+function hasTruthyBooleanishValue(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value > 0;
+  }
+
+  if (typeof value === "string") {
+    const normalizedValue = value.trim().toLowerCase();
+    return ["true", "1", "yes", "y", "icon"].includes(normalizedValue);
+  }
+
+  return false;
+}
+
+function containsIconText(value) {
+  return typeof value === "string" && /\bicon\b/i.test(value);
+}
+
+function isIconPlayer(player) {
+  if (!player) {
+    return false;
+  }
+
+  const directFlag = [
+    player.isIcon,
+    player.is_icon,
+    player.isDreamIcon,
+    player.dream_icon,
+    player.icon_card
+  ].some((value) => hasTruthyBooleanishValue(value));
+
+  if (directFlag) {
+    return true;
+  }
+
+  return [
+    pickFirstText(player, ["specialEdition", "special_edition"]),
+    pickFirstText(player, ["cardDesign", "card_design"]),
+    pickFirstText(player, ["rarity", "rarity_tier"]),
+    pickFirstText(player, ["cardType", "card_type"]),
+    pickFirstText(player, ["cardSeries", "card_series"])
+  ].some((value) => containsIconText(value));
+}
+
+function getPlayerCardRarity(player) {
+  if (!player) {
+    return "common";
+  }
+
+  if (isIconPlayer(player)) {
+    return "icon";
+  }
+
+  const overall = getPlayerOverall(player);
+
+  if (overall >= 89) {
+    return "legendary";
+  }
+
+  if (overall >= 83) {
+    return "epic";
+  }
+
+  if (overall >= 75) {
+    return "rare";
+  }
+
+  return "common";
+}
+
+function getPlayerCardDesign(player) {
+  return pickFirstText(player, ["cardDesign", "card_design"]) || getPlayerCardRarity(player);
+}
+
+function getPlayerSpecialEdition(player) {
+  if (!player) {
+    return null;
+  }
+
+  return (
+    pickFirstText(player, ["specialEdition", "special_edition", "cardSeries", "card_series"]) ||
+    (isIconPlayer(player) ? "Icon" : null)
+  );
+}
+
 function buildRoleStatMap(player) {
   return {
     overall: getPlayerOverall(player),
@@ -456,6 +544,10 @@ function buildPlayerProfile(player) {
     clubName: getPlayerClubName(player) || null,
     leagueName: getPlayerLeagueName(player) || null,
     imageUrl: getPlayerImageUrl(player),
+    rarityTier: getPlayerCardRarity(player),
+    cardDesign: getPlayerCardDesign(player),
+    specialEdition: getPlayerSpecialEdition(player),
+    isIcon: isIconPlayer(player),
     positions,
     primaryPosition,
     positionGroup: getPositionGroup(primaryPosition),
@@ -534,6 +626,8 @@ module.exports = {
   getBestRoleGroup,
   getGoalkeepingScore,
   getInternationalReputation,
+  getPlayerCardDesign,
+  getPlayerCardRarity,
   getMarketValueEuro,
   getNaturalRoleGroup,
   getPlayerAge,
@@ -558,5 +652,7 @@ module.exports = {
   getRoleScoreBreakdown,
   getRoleStrength,
   getSkillMoves,
-  getWeakFoot
+  getWeakFoot,
+  getPlayerSpecialEdition,
+  isIconPlayer
 };

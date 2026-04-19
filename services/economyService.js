@@ -2,6 +2,7 @@ const OwnedCard = require("../models/OwnedCard");
 const Pack = require("../models/Pack");
 const {
   calculateEffectiveOverall,
+  getPlayerCardRarity,
   getInternationalReputation,
   getMarketValueEuro,
   getPlayerOverall,
@@ -40,10 +41,6 @@ function getRefillCoins() {
 }
 
 function getRarityFromOverall(overall) {
-  if (overall >= 93) {
-    return "icon";
-  }
-
   if (overall >= 89) {
     return "legendary";
   }
@@ -62,7 +59,7 @@ function getRarityFromOverall(overall) {
 function calculateSellValue(player, rarity) {
   const overall = getPlayerOverall(player);
   const effectiveOverall = calculateEffectiveOverall(player);
-  const resolvedRarity = rarity || getRarityFromOverall(overall);
+  const resolvedRarity = rarity || getPlayerCardRarity(player) || getRarityFromOverall(overall);
   const multiplier = RARITY_MULTIPLIERS[resolvedRarity] || 1;
   const potential = getPlayerPotential(player);
   const internationalReputation = getInternationalReputation(player);

@@ -19,6 +19,50 @@ const playerSchema = new mongoose.Schema(
       type: String,
       default: ""
     },
+    rarity: {
+      type: String,
+      default: ""
+    },
+    rarity_tier: {
+      type: String,
+      default: ""
+    },
+    cardDesign: {
+      type: String,
+      default: ""
+    },
+    card_design: {
+      type: String,
+      default: ""
+    },
+    specialEdition: {
+      type: String,
+      default: ""
+    },
+    special_edition: {
+      type: String,
+      default: ""
+    },
+    cardSeries: {
+      type: String,
+      default: ""
+    },
+    card_series: {
+      type: String,
+      default: ""
+    },
+    isIcon: {
+      type: Boolean,
+      default: false
+    },
+    is_icon: {
+      type: Boolean,
+      default: false
+    },
+    isDreamIcon: {
+      type: Boolean,
+      default: false
+    },
     birth_date: {
       type: String,
       default: ""
