@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: dreamfc-server
+    env: node
+    plan: free
+    buildCommand: cd server && npm ci
+    startCommand: cd server && npm start
+    envVars: []
