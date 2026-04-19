@@ -50,6 +50,19 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function getConfiguredNumber(value, fallbackValue) {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : fallbackValue;
+}
+
+function getMatchWinCoins() {
+  return Math.max(0, getConfiguredNumber(process.env.MATCH_WIN_COINS, 120));
+}
+
+function getMatchLossCoins() {
+  return Math.max(0, getConfiguredNumber(process.env.MATCH_LOSS_COINS, 45));
+}
+
 function getFormationRoleSlots(formation) {
   const parts = String(formation || "4-3-3")
     .split("-")
@@ -311,12 +324,18 @@ async function simulateMatch(user, options = {}) {
   }
 
   const result = yourScore > opponentScore ? "win" : yourScore < opponentScore ? "loss" : "draw";
+  const coinsBeforeMatch = Number(user.coins || 0);
+  let coinChange = 0;
 
   if (result === "win") {
     user.wins += 1;
+    coinChange = getMatchWinCoins();
   } else if (result === "loss") {
     user.losses += 1;
+    coinChange = -Math.min(coinsBeforeMatch, getMatchLossCoins());
   }
+
+  user.coins = Math.max(0, coinsBeforeMatch + coinChange);
 
   await user.save();
 
@@ -325,6 +344,13 @@ async function simulateMatch(user, options = {}) {
   return {
     result,
     processingStages: PROCESSING_STAGES,
+    coinChange,
+    economy: {
+      coinsBeforeMatch,
+      coinsAfterMatch: user.coins,
+      winReward: getMatchWinCoins(),
+      lossPenalty: getMatchLossCoins()
+    },
     match: {
       simulatedAt: new Date(),
       difficulty,
