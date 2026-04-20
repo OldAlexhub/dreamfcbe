@@ -6,6 +6,7 @@ const express = require("express");
 const authRoutes = require("./routes/authRoutes");
 const clubRoutes = require("./routes/clubRoutes");
 const matchRoutes = require("./routes/matchRoutes");
+const configRoutes = require("./routes/configRoutes");
 const packRoutes = require("./routes/packRoutes");
 const squadRoutes = require("./routes/squadRoutes");
 const { errorHandler, notFound } = require("./middleware/errorMiddleware");
@@ -18,7 +19,7 @@ app.use(express.json());
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "Dream Squad FC backend is running."
+    message: "Dream Squad FC backend is running.",
   });
 });
 
@@ -27,6 +28,7 @@ app.use("/api/packs", packRoutes);
 app.use("/api/club", clubRoutes);
 app.use("/api/squad", squadRoutes);
 app.use("/api/matches", matchRoutes);
+app.use("/api/config", configRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

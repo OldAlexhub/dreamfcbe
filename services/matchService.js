@@ -481,4 +481,5 @@ async function simulateMatch(user, options = {}) {
 
 module.exports = {
   simulateMatch,
+  getMatchCost,
 };
